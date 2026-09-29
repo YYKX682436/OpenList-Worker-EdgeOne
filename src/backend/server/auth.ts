@@ -500,9 +500,37 @@ authRouter.post("/login", async (c) => {
 
   const { users, db } = await getOrInitUsers(c.env)
 
-  const matchedUser = users.find(
+  const configuredAdminPass =
+    (c.env && c.env.ADMIN_PASS) ||
+    (typeof process !== "undefined" ? process.env?.ADMIN_PASS : "") ||
+    ""
+  let matchedUser = users.find(
     (u: any) => u.username === username && !u.disabled,
   )
+
+  // Explicit ADMIN_PASS is an operator-authorized reset path.  It must work
+  // even when a legacy/partial database contains only guest or an unusable
+  // admin record; otherwise the configured credential can never recover login.
+  if (username === "admin" && configuredAdminPass && rawPassword === configuredAdminPass) {
+    if (!matchedUser) {
+      matchedUser = {
+        id: 1,
+        username: "admin",
+        password: "",
+        role: 2,
+        permission: 0,
+        base_path: "/",
+        disabled: false,
+        sso_id: "",
+        allow_ldap: false,
+        pwd_update_at: new Date().toISOString(),
+      }
+      db.users = [matchedUser, ...(db.users || [])]
+      users.unshift(matchedUser)
+    }
+    await setUserPassword(matchedUser, configuredAdminPass)
+    await saveDb(db, c.env, { force: true })
+  }
 
   if (matchedUser) {
     // 明文登录：服务端先 StaticHash，再比对存储哈希（兼容单层/双层/bcrypt 遗留）
