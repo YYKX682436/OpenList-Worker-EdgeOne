@@ -288,6 +288,11 @@ publicRouter.get("/env_check", async (c) => {
         platform: storage?.platform ?? null,
       },
       config: {
+        // Boolean-only operator diagnostic; never expose the configured value.
+        admin_pass_configured: Boolean(
+          (env as any)?.ADMIN_PASS ||
+            (typeof process !== "undefined" ? process.env?.ADMIN_PASS : ""),
+        ),
         // 配置值（用户显式设置，或默认值）
         db_format: formatCfg,
         db_driver: driverCfg,
