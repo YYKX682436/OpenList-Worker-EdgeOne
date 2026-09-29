@@ -406,10 +406,10 @@ export async function getOrInitUsers(envCtx: any) {
       }
       await setUserPassword(admin, envPass)
       db.users = [admin, ...db.users]
-      await saveDb(db, envCtx)
+      await saveDb(db, envCtx, { force: true })
     } else if (adminUser && envPass) {
       await setUserPassword(adminUser, envPass)
-      await saveDb(db, envCtx)
+      await saveDb(db, envCtx, { force: true })
     } else if (adminUser && !isValidFormat) {
       if (!adminPass) {
         // 未初始化：不再自动生成随机密码，交由 Web 安装向导（POST /api/public/init/setup）完成。
