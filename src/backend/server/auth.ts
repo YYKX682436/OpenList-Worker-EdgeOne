@@ -391,7 +391,23 @@ export async function getOrInitUsers(envCtx: any) {
     // ADMIN_PASS is an explicit operator reset request. Apply it even when the
     // existing value is already a modern hash; otherwise changing ADMIN_PASS
     // cannot reset an existing deployment's formal admin password.
-    if (adminUser && envPass) {
+    if (!adminUser && envPass) {
+      const admin: any = {
+        id: 1,
+        username: "admin",
+        password: "",
+        role: 2,
+        permission: 0,
+        base_path: "/",
+        disabled: false,
+        sso_id: "",
+        allow_ldap: false,
+        pwd_update_at: new Date().toISOString(),
+      }
+      await setUserPassword(admin, envPass)
+      db.users = [admin, ...db.users]
+      await saveDb(db, envCtx)
+    } else if (adminUser && envPass) {
       await setUserPassword(adminUser, envPass)
       await saveDb(db, envCtx)
     } else if (adminUser && !isValidFormat) {
