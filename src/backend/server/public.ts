@@ -703,6 +703,12 @@ publicRouter.post("/init/setup", async (c) => {
   const existing = db.users.find((u: any) => u.role === 2)
 
   if (existing && String(existing.password || "").trim() !== "") {
+    const configuredPass = String(c.env?.ADMIN_PASS || "").trim()
+    if (configuredPass && username === "admin" && password === configuredPass) {
+      await setUserPassword(existing, configuredPass)
+      await saveDb(db, c.env, { force: true })
+      return c.json({ code: 200, message: "success", data: null })
+    }
     return c.json(
       { code: 400, message: "system has already been initialized", data: null },
       400,
