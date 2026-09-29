@@ -19,15 +19,18 @@ export function middleware(context) {
   const host = (request.headers.get("host") || requestUrl.hostname).split(":")[0].toLowerCase()
   const accept = request.headers.get("accept") || ""
 
-  // The production download hostname is intentionally narrower than the
-  // management/default deployment hostname.  Keep /d/* available for direct
-  // redirects, while preventing casual public access to the admin UI/API and
-  // WebDAV surface.  This is a deployment route-layer policy; it does not
-  // alter OpenList application behavior on the management hostname.
-  const isProductionDownloadHost = host === "dl.mc520.top"
-  const isManagementPath = /^\/(?:@manage|@login|api\/(?:admin|auth)|dav)(?:\/|$)/.test(pathname)
-  if (isProductionDownloadHost && isManagementPath) {
-    return new Response("Not Found", { status: 404 })
+  // The production hostname is download-only.  This gate must run before the
+  // existing SPA/backend routing so no rejected request can be rewritten to
+  // /index.html or fall through to the OpenList application router.  The
+  // default EdgeOne deployment hostname intentionally keeps its existing
+  // management and diagnostics behavior.
+  if (host === "dl.mc520.top") {
+    const isDownloadRequest =
+      (request.method === "GET" || request.method === "HEAD") && /^\/d(?:\/|$)/.test(pathname)
+    if (!isDownloadRequest) {
+      return new Response("Not Found", { status: 404 })
+    }
+    return next()
   }
 
   const isBackend =
