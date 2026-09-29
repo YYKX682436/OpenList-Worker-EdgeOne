@@ -14,8 +14,21 @@
 // Edge Functions（见 functions/kv-get 等），那里才具备 KV 能力。
 export function middleware(context) {
   const { request, next, rewrite } = context
-  const { pathname } = new URL(request.url)
+  const requestUrl = new URL(request.url)
+  const { pathname } = requestUrl
+  const host = (request.headers.get("host") || requestUrl.hostname).split(":")[0].toLowerCase()
   const accept = request.headers.get("accept") || ""
+
+  // The production download hostname is intentionally narrower than the
+  // management/default deployment hostname.  Keep /d/* available for direct
+  // redirects, while preventing casual public access to the admin UI/API and
+  // WebDAV surface.  This is a deployment route-layer policy; it does not
+  // alter OpenList application behavior on the management hostname.
+  const isProductionDownloadHost = host === "dl.mc520.top"
+  const isManagementPath = /^\/(?:@manage|@login|api\/(?:admin|auth)|dav)(?:\/|$)/.test(pathname)
+  if (isProductionDownloadHost && isManagementPath) {
+    return new Response("Not Found", { status: 404 })
+  }
 
   const isBackend =
     pathname === "/health" || /^\/(api|d|p|sd|kv-get|kv-put|kv-delete|kv-list)(\/|$)/.test(pathname)
