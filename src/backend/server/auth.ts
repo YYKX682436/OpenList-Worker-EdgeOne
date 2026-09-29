@@ -383,16 +383,19 @@ export async function getOrInitUsers(envCtx: any) {
     //                        existing deployment is never locked out nor
     //                        silently reset by upgrading.
     const adminPass = adminUser ? String(adminUser.password || "").trim() : ""
+    const envPass =
+      (envCtx && envCtx.ADMIN_PASS) ||
+      (typeof process !== "undefined" ? process.env?.ADMIN_PASS : "") ||
+      ""
     const isValidFormat = /^[0-9a-f]{64}$/i.test(adminPass)
-    if (adminUser && !isValidFormat) {
-      const envPass =
-        (envCtx && envCtx.ADMIN_PASS) ||
-        (typeof process !== "undefined" ? process.env?.ADMIN_PASS : "") ||
-        ""
-      if (envPass) {
-        await setUserPassword(adminUser, envPass)
-        await saveDb(db, envCtx)
-      } else if (!adminPass) {
+    // ADMIN_PASS is an explicit operator reset request. Apply it even when the
+    // existing value is already a modern hash; otherwise changing ADMIN_PASS
+    // cannot reset an existing deployment's formal admin password.
+    if (adminUser && envPass) {
+      await setUserPassword(adminUser, envPass)
+      await saveDb(db, envCtx)
+    } else if (adminUser && !isValidFormat) {
+      if (!adminPass) {
         // 未初始化：不再自动生成随机密码，交由 Web 安装向导（POST /api/public/init/setup）完成。
         // 前端会在 /api/public/init_status 返回未初始化时自动跳转到安装向导。
         console.warn(
