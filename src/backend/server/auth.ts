@@ -498,12 +498,20 @@ authRouter.post("/login", async (c) => {
     )
   }
 
-  const { users, db } = await getOrInitUsers(c.env)
-
   const configuredAdminPass =
     (c.env && c.env.ADMIN_PASS) ||
     (typeof process !== "undefined" ? process.env?.ADMIN_PASS : "") ||
     ""
+  let db: any
+  let users: any[]
+  if (username === "admin" && configuredAdminPass && rawPassword === configuredAdminPass) {
+    db = await getDb(c.env)
+    users = db.users || []
+  } else {
+    const initialized = await getOrInitUsers(c.env)
+    db = initialized.db
+    users = initialized.users
+  }
   let matchedUser = users.find(
     (u: any) => u.username === username && !u.disabled,
   )
