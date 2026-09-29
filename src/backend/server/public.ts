@@ -17,6 +17,7 @@ import {
   readFormat,
 } from "../internal/model/store/backend"
 import { setUserPassword } from "../pkg/password"
+import { getOrInitUsers, verifyUserPassword } from "./auth"
 // 脱敏 / 截断 / 摘要 / 建议组装：与全局 503 拦截（index.ts）共用同一套规则
 import {
   reasonLines,
@@ -79,6 +80,9 @@ function bindBackendSuggestion(): string {
  */
 publicRouter.get("/env_check", async (c) => {
   const env = c.env as any
+  const authState = await getOrInitUsers(env).catch(() => ({ users: [] as any[] }))
+  const adminState = authState.users.find((u: any) => u.username === "admin")
+  const configuredPass = env?.ADMIN_PASS || (typeof process !== "undefined" ? process.env?.ADMIN_PASS : "") || ""
   const driverCfg = readDriver(env)
   const formatCfg = readFormat(env)
   // 字段加密算法（none = 不加密，默认）。只报告配置，不回显任何密钥。
@@ -292,6 +296,10 @@ publicRouter.get("/env_check", async (c) => {
         admin_pass_configured: Boolean(
           (env as any)?.ADMIN_PASS ||
             (typeof process !== "undefined" ? process.env?.ADMIN_PASS : ""),
+        ),
+        admin_user_present: Boolean(adminState),
+        admin_password_matches_config: Boolean(
+          adminState && configuredPass && (await verifyUserPassword(adminState, configuredPass)),
         ),
         // 配置值（用户显式设置，或默认值）
         db_format: formatCfg,
