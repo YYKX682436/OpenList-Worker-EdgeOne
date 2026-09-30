@@ -5,7 +5,8 @@
 - Management domain: `openlist.mc520.top`
 - Download domain: `dl.mc520.top`
 - Frontend repository: `YYKX682436/OpenList-Frontend`
-- Frontend production ref: `phone-server-v1`
+- Frontend production ref: `phone-server-v2`
+- Frontend production commit: `24a14ca5a5a3a6aae39690e037e7209b91915a09`
 
 ## EdgeOne Makers build variables
 
@@ -14,7 +15,7 @@ Set these non-secret variables for the production environment:
 ```text
 FRONTEND_BUILD_FROM_SOURCE=1
 FRONTEND_GIT_URL=https://github.com/YYKX682436/OpenList-Frontend.git
-FRONTEND_GIT_REF=phone-server-v1
+FRONTEND_GIT_REF=phone-server-v2
 VITE_DOWNLOAD_URL=https://dl.mc520.top
 ```
 
