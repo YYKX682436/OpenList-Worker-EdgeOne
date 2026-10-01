@@ -382,6 +382,99 @@ test("139 fs/get skips upstream link while /d resolves it on demand", async () =
   }
 })
 
+test("fs/get: URI-encoded path header recovers an omitted JSON body", async () => {
+  const env: any = {}
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlist-path-header-get-"))
+  const relativeDir = path.join("安卓定制V", "中国移动云盘")
+  fs.mkdirSync(path.join(root, relativeDir), { recursive: true })
+  fs.writeFileSync(path.join(root, relativeDir, "8076多开_k_n.apk"), "APK")
+  tmpRoots.push(root)
+
+  const basePath = "/中国移动云盘/安卓定制V"
+  const logicalPath = "/中国移动云盘/8076多开_k_n.apk"
+  const canonicalPath = `${basePath}${logicalPath}`
+  await saveDb(
+    dbWith(
+      root,
+      [{ key: "sign_all", value: "true" }],
+      basePath,
+      "/中国移动云盘",
+    ),
+    env,
+  )
+
+  const res = await appOf().request("/api/fs/get", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-OpenList-Path": encodeURIComponent(logicalPath),
+    },
+    body: "",
+  })
+  const body: any = await res.json()
+  assert.equal(body.code, 200, `fs/get failed: ${JSON.stringify(body)}`)
+  assert.equal(body.data.name, "8076多开_k_n.apk")
+  assert.equal(body.data.raw_path, canonicalPath)
+  assert.equal(await verifyDownloadSign(env, canonicalPath, body.data.sign), true)
+})
+
+test("fs/list: URI-encoded path header recovers a missing body.path", async () => {
+  const env: any = {}
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlist-path-header-list-"))
+  const relativeDir = path.join("安卓定制V", "中国移动云盘")
+  fs.mkdirSync(path.join(root, relativeDir), { recursive: true })
+  fs.writeFileSync(path.join(root, relativeDir, "8076多开_k_n.apk"), "APK")
+  tmpRoots.push(root)
+
+  const basePath = "/中国移动云盘/安卓定制V"
+  const logicalPath = "/中国移动云盘"
+  const canonicalPath = `${basePath}${logicalPath}/8076多开_k_n.apk`
+  await saveDb(
+    dbWith(
+      root,
+      [{ key: "sign_all", value: "true" }],
+      basePath,
+      "/中国移动云盘",
+    ),
+    env,
+  )
+
+  const res = await appOf().request("/api/fs/list", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-OpenList-Path": encodeURIComponent(logicalPath),
+    },
+    body: JSON.stringify({}),
+  })
+  const body: any = await res.json()
+  assert.equal(body.code, 200, `fs/list failed: ${JSON.stringify(body)}`)
+  const item = body.data.content.find(
+    (entry: any) => entry.name === "8076多开_k_n.apk",
+  )
+  assert.ok(item, "fs/list should return the fixture file")
+  assert.equal(item.raw_path, canonicalPath)
+  assert.equal(await verifyDownloadSign(env, canonicalPath, item.sign), true)
+})
+
+test("fs/get: JSON body path remains authoritative over the fallback header", async () => {
+  const env: any = {}
+  const root = makeLocalRoot()
+  await saveDb(dbWith(root), env)
+
+  const res = await appOf().request("/api/fs/get", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-OpenList-Path": encodeURIComponent("/wrong/path.apk"),
+    },
+    body: JSON.stringify({ path: "/local/a.exe" }),
+  })
+  const body: any = await res.json()
+  assert.equal(body.code, 200, `fs/get failed: ${JSON.stringify(body)}`)
+  assert.equal(body.data.raw_path, "/local/a.exe")
+})
+
 test("fs/get: 不需要签名时不追加 sign（保持公开直链语义）", async () => {
   const env: any = {}
   const root = makeLocalRoot()

@@ -70,6 +70,30 @@ import {
 export const fsRouter = new Hono()
 fsRouter.route("/seed", seedRouter)
 
+/**
+ * EdgeOne can deliver POST /fs/get and /fs/list without the JSON body even
+ * when the browser sent it. Keep the normal request body authoritative and
+ * use this URI-encoded mirror only when `body.path` is absent. The header
+ * carries a logical request path, not a canonical storage path; getActualPath
+ * remains the sole owner of base_path expansion.
+ */
+function getFsRequestPath(c: any, body: any): string {
+  if (typeof body?.path === "string" && body.path.length > 0) {
+    return body.path
+  }
+
+  const pathHeader = c.req.header("X-OpenList-Path")
+  if (pathHeader) {
+    try {
+      return decodeURIComponent(pathHeader)
+    } catch {
+      throw new Error("Invalid X-OpenList-Path header")
+    }
+  }
+
+  return "/"
+}
+
 const getStorageRequestContext = (c: any) => {
   try {
     const executionCtx = c.executionCtx
@@ -198,13 +222,14 @@ fsRouter.post("/dirs", async (c) => {
 
 fsRouter.post("/list", async (c) => {
   const body = await c.req.json().catch(() => ({}))
+  const logicalPath = getFsRequestPath(c, body)
   const user = await getUserFromContext(c)
-  const isShare = (body.path || "/").startsWith("/@s")
+  const isShare = logicalPath.startsWith("/@s")
   if (!isShare && (!user || user.disabled)) {
     return c.json({ code: 401, message: "Unauthorized", data: null }, 401)
   }
   const requestContext = getStorageRequestContext(c)
-  const reqPath = getActualPath(user, body.path || "/")
+  const reqPath = getActualPath(user, logicalPath)
   const page = parseInt(body.page, 10) || 1
   const perPage = parseInt(body.per_page, 10) || 0
 
@@ -465,13 +490,14 @@ fsRouter.post("/list", async (c) => {
 
 fsRouter.post("/get", async (c) => {
   const body = await c.req.json().catch(() => ({}))
+  const logicalPath = getFsRequestPath(c, body)
   const user = await getUserFromContext(c)
-  const isShare = (body.path || "/").startsWith("/@s")
+  const isShare = logicalPath.startsWith("/@s")
   if (!isShare && (!user || user.disabled)) {
     return c.json({ code: 401, message: "Unauthorized", data: null }, 401)
   }
   const requestContext = getStorageRequestContext(c)
-  const reqPath = getActualPath(user, body.path || "/")
+  const reqPath = getActualPath(user, logicalPath)
   try {
     // Share path: /@s/{shareId}/...
     if (reqPath.startsWith("/@s")) {
