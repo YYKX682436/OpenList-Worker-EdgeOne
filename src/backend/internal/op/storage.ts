@@ -1507,7 +1507,9 @@ export async function getItem(
   const driver = await getDriver(driverName, resolved.storage)
   let item: FileItem
   try {
-    item = await driver.get(virtualPath, resolved.physical!)
+    item = await driver.get(virtualPath, resolved.physical!, {
+      needRawUrl: false,
+    })
   } finally {
     await flushPendingDriverState(
       driverName,

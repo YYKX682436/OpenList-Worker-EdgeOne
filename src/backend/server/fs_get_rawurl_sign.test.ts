@@ -6,7 +6,9 @@ import { test } from "node:test"
 import { Hono } from "hono"
 import { fsRouter } from "./fs"
 import { rawRouter } from "./raw"
-import { saveDb } from "../internal/model/db"
+import { Yun139Driver } from "../drivers/139/driver"
+import { Yun139ApiClient } from "../drivers/139/util"
+import { resolvePath, saveDb } from "../internal/model/db"
 import { verifyDownloadSign } from "../pkg/sign"
 
 /**
@@ -77,6 +79,7 @@ const appOf = () => {
   const app = new Hono()
   app.route("/api/fs", fsRouter)
   app.route("/api/p", rawRouter)
+  app.route("/api/d", rawRouter)
   return app
 }
 
@@ -178,6 +181,205 @@ test("fs/list: item raw_path equals the one canonical path used for signing", as
     "fs/list sign must be issued for the exact raw_path",
   )
   assert.equal(item.raw_path.split(basePath).length - 1, 1)
+})
+
+test("production path shape preserves the second mount-name segment", async () => {
+  const env: any = {}
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlist-139-shape-"))
+  const relativeDir = path.join("安卓定制V", "中国移动云盘")
+  fs.mkdirSync(path.join(root, relativeDir), { recursive: true })
+  fs.writeFileSync(path.join(root, relativeDir, "8076多开_k_n.apk"), "APK")
+  tmpRoots.push(root)
+
+  const basePath = "/中国移动云盘/安卓定制V"
+  const mountPath = "/中国移动云盘"
+  await saveDb(
+    dbWith(
+      root,
+      [{ key: "sign_all", value: "true" }],
+      basePath,
+      mountPath,
+    ),
+    env,
+  )
+
+  const app = appOf()
+  const listed = await app.request("/api/fs/list", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "/中国移动云盘" }),
+  })
+  const listBody: any = await listed.json()
+  assert.equal(listBody.code, 200, `fs/list failed: ${JSON.stringify(listBody)}`)
+  const listItem = listBody.data.content.find(
+    (entry: any) => entry.name === "8076多开_k_n.apk",
+  )
+  assert.ok(listItem, "fs/list should return the mounted file")
+
+  const got = await app.request("/api/fs/get", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "/中国移动云盘/8076多开_k_n.apk" }),
+  })
+  const getBody: any = await got.json()
+  assert.equal(getBody.code, 200, `fs/get failed: ${JSON.stringify(getBody)}`)
+
+  const expected =
+    "/中国移动云盘/安卓定制V/中国移动云盘/8076多开_k_n.apk"
+  assert.equal(listItem.raw_path, expected)
+  assert.equal(getBody.data.raw_path, expected)
+  assert.equal(listItem.raw_path, getBody.data.raw_path)
+  assert.notEqual(
+    getBody.data.raw_path,
+    `${expected}/中国移动云盘/8076多开_k_n.apk`,
+    "the canonical file path must not be appended to itself",
+  )
+  assert.equal(
+    await verifyDownloadSign(env, expected, listItem.sign),
+    true,
+    "fs/list signs the same canonical path it returns",
+  )
+  assert.equal(
+    await verifyDownloadSign(env, expected, getBody.data.sign),
+    true,
+    "fs/get signs the same canonical path it returns",
+  )
+
+  const resolved: any = await resolvePath(expected, env)
+  assert.equal(resolved.cleanPath, expected)
+  assert.equal(
+    resolved.relative,
+    "/安卓定制V/中国移动云盘/8076多开_k_n.apk",
+  )
+  assert.equal(
+    resolved.physical,
+    path.join(root, "安卓定制V", "中国移动云盘", "8076多开_k_n.apk").replace(/\\/g, "/"),
+  )
+})
+
+test("139 fs/get skips upstream link while /d resolves it on demand", async () => {
+  const env: any = {}
+  const storageId = `139-metadata-${Date.now()}-${Math.random()}`
+  const basePath = "/中国移动云盘/安卓定制V"
+  const mountPath = "/中国移动云盘"
+  const canonicalPath =
+    "/中国移动云盘/安卓定制V/中国移动云盘/8076多开_k_n.apk"
+  const downloadUrl =
+    "https://ykj-eos-wx2-01.eos-wuxi-3.cmecloud.cn/metadata-test.apk?mock=1"
+  let downloadUrlCalls = 0
+
+  const originalInit = Yun139ApiClient.prototype.init
+  const originalListFiles = Yun139ApiClient.prototype.listFiles
+  const originalGetDownloadUrl = Yun139ApiClient.prototype.getDownloadUrl
+  Yun139ApiClient.prototype.init = async function () {}
+  Yun139ApiClient.prototype.listFiles = async function (folderId = "/") {
+    if (folderId === "/") {
+      return {
+        folders: [
+          { catalogID: "catalog-v", catalogName: "安卓定制V" },
+        ],
+        files: [],
+      }
+    }
+    if (folderId === "catalog-v") {
+      return {
+        folders: [
+          { catalogID: "catalog-cloud", catalogName: "中国移动云盘" },
+        ],
+        files: [],
+      }
+    }
+    return {
+      folders: [],
+      files: [
+        {
+          contentID: "content-8076",
+          contentName: "8076多开_k_n.apk",
+          contentSize: "281393532",
+          createTime: "2026-09-28T12:48:53.885+08:00",
+          updateTime: "2026-09-28T12:48:53.885+08:00",
+        },
+      ],
+    }
+  }
+  Yun139ApiClient.prototype.getDownloadUrl = async function (contentId) {
+    downloadUrlCalls++
+    assert.equal(contentId, "content-8076")
+    return downloadUrl
+  }
+
+  try {
+    await saveDb(
+      {
+        settings: [],
+        users: [
+          {
+            id: 1,
+            username: "guest",
+            password: "unused",
+            role: 1,
+            permission: 0,
+            base_path: basePath,
+            disabled: false,
+          },
+        ],
+        storages: [
+          {
+            id: storageId,
+            driver: "139Yun",
+            mount_path: mountPath,
+            addition: JSON.stringify({
+              authorization: Buffer.from(
+                "Basic:13800138000:token123|1|1|1780000000000",
+              ).toString("base64"),
+              type: "personal_new",
+            }),
+            modified: new Date().toISOString(),
+            disabled: false,
+          },
+        ],
+        shares: [],
+        metas: [],
+      } as any,
+      env,
+    )
+
+    const app = appOf()
+    const metadata = await app.request("/api/fs/get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "/中国移动云盘/8076多开_k_n.apk" }),
+    })
+    const metadataBody: any = await metadata.json()
+    assert.equal(metadata.status, 200)
+    assert.equal(metadataBody.code, 200)
+    assert.equal(metadataBody.data.name, "8076多开_k_n.apk")
+    assert.equal(metadataBody.data.raw_path, canonicalPath)
+    assert.equal(
+      metadataBody.data.raw_url,
+      "/api/d/%E4%B8%AD%E5%9B%BD%E7%A7%BB%E5%8A%A8%E4%BA%91%E7%9B%98/%E5%AE%89%E5%8D%93%E5%AE%9A%E5%88%B6V/%E4%B8%AD%E5%9B%BD%E7%A7%BB%E5%8A%A8%E4%BA%91%E7%9B%98/8076%E5%A4%9A%E5%BC%80_k_n.apk",
+    )
+    assert.equal(
+      downloadUrlCalls,
+      0,
+      "fs/get metadata must not request the 139 download URL",
+    )
+
+    const encodedPath = canonicalPath
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")
+    const download = await app.request(`/api/d${encodedPath}`, {
+      method: "GET",
+    })
+    assert.equal(download.status, 302)
+    assert.equal(download.headers.get("Location"), downloadUrl)
+    assert.equal(downloadUrlCalls, 1, "/d must resolve the provider URL")
+  } finally {
+    Yun139ApiClient.prototype.init = originalInit
+    Yun139ApiClient.prototype.listFiles = originalListFiles
+    Yun139ApiClient.prototype.getDownloadUrl = originalGetDownloadUrl
+  }
 })
 
 test("fs/get: 不需要签名时不追加 sign（保持公开直链语义）", async () => {

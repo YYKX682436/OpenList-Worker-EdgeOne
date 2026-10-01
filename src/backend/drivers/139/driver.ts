@@ -95,7 +95,11 @@ export class Yun139Driver implements StorageDriver {
     )
   }
 
-  async get(virtualPath: string, physicalPath: string): Promise<FileItem> {
+  async get(
+    virtualPath: string,
+    physicalPath: string,
+    options?: { needRawUrl?: boolean },
+  ): Promise<FileItem> {
     const clean = this.cleanPath(physicalPath)
     const name = clean.split("/").filter(Boolean).pop() || "root"
 
@@ -135,12 +139,8 @@ export class Yun139Driver implements StorageDriver {
           ? foundFile.contentSize
           : parseInt(String(foundFile.contentSize || "0"), 10)
       let rawUrl = ""
-      if (foundFile.contentID) {
-        try {
-          rawUrl = await this.client.getDownloadUrl(foundFile.contentID)
-        } catch (e) {
-          console.warn("[139] failed to get download url in get():", e)
-        }
+      if (options?.needRawUrl !== false && foundFile.contentID) {
+        rawUrl = await this.client.getDownloadUrl(foundFile.contentID)
       }
       return {
         name: foundFile.contentName || name,

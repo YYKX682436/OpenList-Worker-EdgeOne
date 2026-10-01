@@ -139,7 +139,11 @@ export function calcFileType(name: string, isDir: boolean): number {
 export interface StorageDriver {
   init?(): Promise<void>
   list(virtualPath: string, physicalPath: string): Promise<FileItem[]>
-  get(virtualPath: string, physicalPath: string): Promise<FileItem>
+  get(
+    virtualPath: string,
+    physicalPath: string,
+    options?: { needRawUrl?: boolean },
+  ): Promise<FileItem>
   mkdir(virtualPath: string, physicalPath: string): Promise<void>
   rename(
     virtualPath: string,
