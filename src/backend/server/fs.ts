@@ -373,6 +373,7 @@ fsRouter.post("/list", async (c) => {
           const hashInfo: Record<string, string> = (item as any).hash_info || {}
           return {
             name: item.name,
+            raw_path: fullPath,
             size: item.size,
             is_dir: item.is_dir,
             created: item.created || item.modified || new Date().toISOString(),
@@ -618,6 +619,7 @@ fsRouter.post("/get", async (c) => {
       message: "success",
       data: {
         name: item.name,
+        raw_path: reqPath,
         size: item.size,
         is_dir: item.is_dir,
         created:

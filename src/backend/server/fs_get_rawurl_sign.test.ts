@@ -44,6 +44,8 @@ function makeLocalRoot(): string {
 const dbWith = (
   root: string,
   settings: Array<{ key: string; value: string }> = [],
+  basePath = "/",
+  mountPath = "/local",
 ) => ({
   settings,
   users: [
@@ -53,7 +55,7 @@ const dbWith = (
       password: "xxx",
       role: 1,
       permission: 0,
-      base_path: "/",
+      base_path: basePath,
       disabled: false,
     },
   ],
@@ -61,7 +63,7 @@ const dbWith = (
     {
       id: "s1",
       driver: "Local",
-      mount_path: "/local",
+      mount_path: mountPath,
       addition: JSON.stringify({ root_folder_path: root }),
       modified: "2026-01-01T00:00:00.000Z",
       disabled: false,
@@ -116,6 +118,66 @@ test("fs/get: raw_url 自带签名，且该签名能通过 /p 验签（Issue #66
     401,
     "raw_url returned by /fs/get must be accepted by /p (was 401 before the fix)",
   )
+})
+
+test("fs/get: returns one canonical raw_path including the user's base_path", async () => {
+  const env: any = {}
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlist-base-path-get-"))
+  fs.writeFileSync(path.join(root, "8076多开_k_n.apk"), "APK")
+  tmpRoots.push(root)
+  const basePath = "/中国移动云盘/安卓定制V"
+  await saveDb(
+    dbWith(root, [{ key: "sign_all", value: "true" }], basePath, basePath),
+    env,
+  )
+
+  const res = await appOf().request("/api/fs/get", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "/8076多开_k_n.apk" }),
+  })
+  const body: any = await res.json()
+  assert.equal(body.code, 200, `fs/get failed: ${JSON.stringify(body)}`)
+  const expected = `${basePath}/8076多开_k_n.apk`
+  assert.equal(body.data.raw_path, expected)
+  assert.equal(
+    await verifyDownloadSign(env, expected, body.data.sign),
+    true,
+    "fs/get sign must be issued for the exact raw_path",
+  )
+  assert.equal(body.data.raw_path.split(basePath).length - 1, 1)
+})
+
+test("fs/list: item raw_path equals the one canonical path used for signing", async () => {
+  const env: any = {}
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlist-base-path-list-"))
+  fs.writeFileSync(path.join(root, "8076多开_k_n.apk"), "APK")
+  tmpRoots.push(root)
+  const basePath = "/中国移动云盘/安卓定制V"
+  await saveDb(
+    dbWith(root, [{ key: "sign_all", value: "true" }], basePath, basePath),
+    env,
+  )
+
+  const res = await appOf().request("/api/fs/list", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "/" }),
+  })
+  const body: any = await res.json()
+  assert.equal(body.code, 200, `fs/list failed: ${JSON.stringify(body)}`)
+  const item = body.data.content.find(
+    (entry: any) => entry.name === "8076多开_k_n.apk",
+  )
+  assert.ok(item, "fs/list should return the fixture file")
+  const expected = `${basePath}/8076多开_k_n.apk`
+  assert.equal(item.raw_path, expected)
+  assert.equal(
+    await verifyDownloadSign(env, expected, item.sign),
+    true,
+    "fs/list sign must be issued for the exact raw_path",
+  )
+  assert.equal(item.raw_path.split(basePath).length - 1, 1)
 })
 
 test("fs/get: 不需要签名时不追加 sign（保持公开直链语义）", async () => {
