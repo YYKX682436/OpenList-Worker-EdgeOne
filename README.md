@@ -1,3 +1,8 @@
+> [!NOTE]
+> **项目关系**：本仓库是当前 EdgeOne 生产部署的主仓库。相关官方项目 Fork：
+> - [OpenList-Worker](https://github.com/YYKX682436/OpenList-Worker)：Worker 后端。
+> - [OpenList-Frontend](https://github.com/YYKX682436/OpenList-Frontend)：前端。
+
 <div align="center">
   <img src="https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg" width="128" height="128" alt="logo" />
 
